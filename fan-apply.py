@@ -27,7 +27,11 @@ ExecStopPost=
 ExecStopPost=/etc/frame-fan/fan/fancontrol.py --stop
 """
 
-INTERP = '''    def interp(self, t):
+INTERP = '''    def custom(self, t):
+        if self.ramp:
+            f, c, t0, t1, k = self.ramp
+            x = min(max((t - t0) / (t1 - t0), 0), 1)
+            return round(f + (c - f) * ((1 - k) * x + k * x * x))
         p = self.curve
         if t <= p[0][0]:
             return p[0][1]
@@ -38,10 +42,10 @@ INTERP = '''    def interp(self, t):
 
 '''
 EDITS = [
-    ("        self.fan_max_speed = fan_max_speed\n", '        self.fan_max_speed = fan_max_speed\n        self.ceiling = config.get("ceiling", fan_max_speed)\n        self.curve = config.get("curve")\n        self.read_failures = 0\n'),
+    ("        self.fan_max_speed = fan_max_speed\n", '        self.fan_max_speed = fan_max_speed\n        self.curve = config.get("curve")\n        self.ramp = config.get("ramp")\n        self.read_failures = 0\n        self.measured_temp = self.max_temp\n'),
     ("                    self.n_poll_requests = 0\n", "                    self.n_poll_requests = 0\n                    self.read_failures = 0\n"),
     ("                print('An exception occurred when attempting to read temp: {}'.format(e))\n", "                print('An exception occurred when attempting to read temp: {}'.format(e))\n                self.read_failures += 1\n                if self.read_failures > 20:\n                    raise SystemExit('temperature unreadable')\n"),
-    ("self.control_output = max(self.controller.output, 0)", "out = self.interp(self.control_temp) if self.curve else min(max(self.controller.output, 0), self.ceiling)\n            self.control_output = max(out, 78) if max(self.control_temp, self.measured_temp) >= 80 else out"),
+    ("self.control_output = max(self.controller.output, 0)", "out = self.custom(self.control_temp)\n            self.control_output = max(out, 78) if max(self.control_temp, self.measured_temp) >= 80 else out"),
     ("    # update this to include hysteresis\n", INTERP + "    # update this to include hysteresis\n"),
 ]
 
@@ -105,13 +109,17 @@ def read_request():
     return json.loads(data)
 
 
+def sc(*args, **kw):
+    return subprocess.run(["systemctl", *args], timeout=30, **kw)
+
+
 def status():
-    return subprocess.run(["systemctl", "show", "-p", "ActiveState", "-p", "NRestarts", "deckard-fan-control"], capture_output=True, text=True).stdout
+    return sc("show", "-p", "ActiveState", "-p", "NRestarts", "deckard-fan-control", capture_output=True, text=True).stdout
 
 
 def restart():
-    subprocess.run(["systemctl", "reset-failed", "deckard-fan-control"])
-    subprocess.run(["systemctl", "restart", "deckard-fan-control"], check=True)
+    sc("reset-failed", "deckard-fan-control")
+    sc("restart", "deckard-fan-control", check=True)
     before = status()
     time.sleep(3)
     after = status()
@@ -127,22 +135,27 @@ def max_fan():
                     continue
             with open(d + "/pwm1", "w") as f:
                 f.write("98")
-            return
+            with open(d + "/pwm1") as f:
+                return int(f.read()) == 98
         except (OSError, ValueError):
             pass
+    return False
 
 
 def go_stock(fallback):
+    rec = {"stock": True}
     try:
         if os.path.exists(DROPIN):
             os.remove(DROPIN)
-        subprocess.run(["systemctl", "daemon-reload"], check=True)
-        max_fan()
+        sc("daemon-reload", check=True)
+        if not max_fan():
+            rec["max"] = False
+            print("maximum fan write failed", file=sys.stderr, flush=True)
         restart()
     except Exception:
-        write(APPLIED, json.dumps({"stock": True, "error": True}))
+        write(APPLIED, json.dumps({**rec, "error": True}))
         raise
-    write(APPLIED, json.dumps({"stock": True, **({"fallback": True} if fallback else {})}))
+    write(APPLIED, json.dumps({**rec, **({"fallback": True} if fallback else {})}))
     raise SystemExit(0)
 
 
@@ -155,44 +168,39 @@ if not os.environ.get("FRAME_FAN_LOCKED"):
         except OSError:
             time.sleep(0.1)
     else:
-        raise SystemExit(1)
+        if "--stock" not in sys.argv:
+            raise SystemExit(1)
 
 if "--stock" in sys.argv:
     go_stock(True)
+
+if not os.path.isdir(os.path.dirname(CONFIG)):
+    raise SystemExit(0)
 
 try:
     req = read_request()
     if req.get("stock") is True:
         go_stock(False)
-    quad = {}
     if "points" in req:
         pts = [[int(t), int(v)] for t, v in req["points"]]
         if not valid_points(pts):
             raise ValueError
         req = {"points": pts}
         f, c = pts[0][1], pts[-1][1]
-        curve = json.dumps(pts)
-        t0 = pts[0][0]
+        param = "curve: " + json.dumps(pts)
     else:
         f, c, t0, t1 = (int(req[k]) for k in ("floor", "ceil", "t0", "t1"))
         s = int(req.get("s", 0))
         if not (30 <= f <= c <= 98 and 25 <= t0 and t0 + 5 <= t1 <= 90 and -100 <= s <= 100):
             raise ValueError
         req = {"floor": f, "ceil": c, "t0": t0, "t1": t1, "s": s}
-        curve = None
-        d, r, k = t1 - t0, c - f, s / 100
-        a = r * k / d ** 2
-        b = r * (1 - k) / d - 2 * a * t0
-        q = f - r * (1 - k) * t0 / d + a * t0 ** 2
-        quad = {"A": round(a, 8), "B": round(b, 8), "C": round(q, 8)}
+        param = "ramp: " + json.dumps([f, c, t0, t1, s / 100])
 except Exception:
     raise SystemExit(1)
 
 try:
     ctl = patched()
     text = open(STOCK).read()
-    for key, v in quad.items():
-        text = sub(r"^%s_quad_control: &%s_quad_control .*$" % (key, key), "%s_quad_control: &%s_quad_control %s" % (key, key, v), text)
     subs = {
         "fan_min_speed": f,
         "fan_charging_min_speed": min(f + 5, c),
@@ -201,13 +209,12 @@ try:
     }
     for key, v in subs.items():
         text = sub(r"^%s: .*$" % key, "%s: %s" % (key, v), text)
-    extra = "\n%sceiling: " + str(c) + ("\n%scurve: " + curve if curve else "")
-    text = sub(r"^( +)T_threshold: [0-9.]+$", lambda m: "%sT_threshold: %d" % (m[1], t0) + extra.replace("%s", m[1]), text, len(re.findall(r"^ +type: ", text, re.M)))
+    text = sub(r"^( +)T_threshold: [0-9.]+$", lambda m: m[0] + "\n" + m[1] + param, text, len(re.findall(r"^ +type: ", text, re.M)))
     write(CONTROL, ctl, 0o755)
     write(CONFIG, text)
     os.makedirs(os.path.dirname(DROPIN), exist_ok=True)
     write(DROPIN, UNIT)
-    subprocess.run(["systemctl", "daemon-reload"], check=True)
+    sc("daemon-reload", check=True)
     restart()
 except Exception:
     go_stock(True)

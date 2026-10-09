@@ -10,11 +10,15 @@ Framey.register({
     let pts = [];
     let mode = "ramp";
     let saved = null;
-    let state = { applied: {}, profiles: [], rpm: null, temp: null, pwm: null };
-    let pending = "";
+    let state = { applied: {}, profiles: [], rpm: null, temp: null, zone: null, pwm: null };
+    let pending = null;
+    let err = null;
     let tiles = [];
+    let list = false;
     let first = true;
     let hook = null;
+    let iv = 0;
+    let to = 0;
     const pct = v => Math.round((v * 100) / 98);
     const sig = p => (p.stock ? "stock" : p.points ? "p" + JSON.stringify(p.points) : [p.floor, p.ceil, p.t0, p.t1, p.s || 0].join());
     const req = p => (p.stock ? { stock: true } : p.points ? { points: p.points } : { floor: p.floor, ceil: p.ceil, t0: p.t0, t1: p.t1, s: p.s || 0 });
@@ -40,22 +44,27 @@ Framey.register({
     const paint = () => {
       const k = state.rpm === null ? "rpm n/a" : (state.rpm / 1000).toFixed(1) + "k rpm";
       const meas = state.rpm === null ? "--" : Math.round(state.rpm / 172) + "%";
-      live.textContent = (state.temp === null ? "-- C" : state.temp + " C") + "   cmd " + (state.pwm === null ? "--" : pct(state.pwm) + "%") + "   meas " + meas + "   " + k;
+      live.textContent = (state.temp === null ? "-- C" : state.temp.toFixed(1) + " C " + (state.zone || "").replace("_thermal", "")) + "   cmd " + (state.pwm === null ? "--" : pct(state.pwm) + "%") + "   meas " + meas + "   " + k;
       const w = [];
       if (state.temp === null) w.push("Temperature sensor unavailable");
       if (state.rpm !== null && state.pwm > 40 && state.rpm < 500) w.push("Fan not spinning");
       if (state.applied.fallback) w.push("Custom control failed: stock restored");
       if (state.applied.error) w.push("Fan service failed to restart");
+      if (state.applied.max === false) w.push("Maximum fan write failed before stock restart");
+      if (err) w.push(err.text);
       warn.textContent = w.join(" | ");
-      const on = pending || sig(state.applied);
+      const on = pending ? pending.sig : sig(state.applied);
       tiles.forEach(t => { t.el.style.background = sig(t.p) === on ? "#5585ff" : "#2a2a3a"; });
       if (hook) hook();
     };
-    const take = s => {
+    const take = (s, user) => {
       if (s.error) {
-        warn.textContent = "Fan backend error: " + s.error;
+        err = { text: "Fan backend error: " + s.error, user };
+        pending = null;
+        paint();
         return;
       }
+      if (err && !err.user) err = null;
       state = s;
       if (first && !s.applied.stock) {
         if (s.applied.points) {
@@ -67,18 +76,27 @@ Framey.register({
         }
       }
       first = false;
-      if (sig(s.applied) === pending) pending = "";
-      paint();
+      if (pending && (Date.now() > pending.until || JSON.stringify(s.applied) !== pending.base)) pending = null;
+      if (list && !tiles.length && s.profiles.length) profilesView();
+      else paint();
     };
     const refresh = () => Framey.call("fan", "get").then(take);
-    const send = (method, arg) => Framey.call("fan", method, arg).then(take);
+    const send = (method, arg) => {
+      err = null;
+      return Framey.call("fan", method, arg).then(s => {
+        take(s, true);
+        return s;
+      });
+    };
     const pick = p => {
-      pending = sig(p);
+      pending = { sig: sig(p), base: JSON.stringify(state.applied), until: Date.now() + 15000 };
       send("set", req(p));
       paint();
-      setTimeout(refresh, 2500);
+      clearTimeout(to);
+      to = setTimeout(refresh, 2500);
     };
     const profilesView = () => {
+      list = true;
       body.replaceChildren();
       live.style.display = "";
       hook = null;
@@ -90,7 +108,7 @@ Framey.register({
           const x = button("x", "position:absolute;top:6px;right:6px;width:40px;height:40px;font-size:20px;background:#101018", e => {
             e.stopPropagation();
             if (x.textContent === "x") x.textContent = "?";
-            else send("delete", p.name).then(profilesView);
+            else send("delete", p.name).then(s => s.error || profilesView());
           });
           t.append(x);
         }
@@ -105,7 +123,7 @@ Framey.register({
     const fmt = v => pct(v) + "%  " + rpmk(v);
     const nextName = () => {
       const used = state.profiles.map(p => p.name);
-      for (let i = 1; i < 8; i++) if (!used.includes("Custom " + i)) return "Custom " + i;
+      for (let i = 1; i < 10; i++) if (!used.includes("Custom " + i)) return "Custom " + i;
       return "Custom 8";
     };
     const modeBar = () => {
@@ -220,7 +238,7 @@ Framey.register({
       const bar = div("display:flex;gap:8px;margin-top:8px");
       bar.append(
         button("Apply", "flex:1;height:54px;font-size:21px;background:#5585ff", () => !low80(pts) && pick({ points: pts.map(p => [...p]) })),
-        button("Save", "flex:1;height:54px;font-size:21px", () => !low80(pts) && send("save", { name: nextName(), points: pts }).then(profilesView)),
+        button("Save", "flex:1;height:54px;font-size:21px", () => !low80(pts) && send("save", { name: nextName(), points: pts }).then(s => s.error || profilesView())),
         button("Stock", "flex:1;height:54px;font-size:21px", () => pick({ stock: true })),
         button("Profiles", "flex:1;height:54px;font-size:21px", profilesView),
       );
@@ -229,6 +247,7 @@ Framey.register({
       redraw();
     };
     const customView = () => {
+      list = false;
       body.replaceChildren();
       tiles = [];
       hook = null;
@@ -269,13 +288,21 @@ Framey.register({
       const bar = div("display:flex;gap:10px;margin-top:12px");
       bar.append(
         button("Apply", "flex:1;height:60px;font-size:22px;background:#5585ff", () => pick(cfg)),
-        button("Save", "flex:1;height:60px;font-size:22px", () => send("save", { name: nextName(), ...cfg }).then(profilesView)),
+        button("Save", "flex:1;height:60px;font-size:22px", () => send("save", { name: nextName(), ...cfg }).then(s => s.error || profilesView())),
         button("Profiles", "flex:1;height:60px;font-size:22px", profilesView),
       );
       body.append(bar, div("font-size:16px;color:#8a8aa0;margin-top:8px", "From 80 C the fan always runs at 80% or more."));
       sync();
     };
-    Framey.call("fan", "get").then(s => { take(s); profilesView(); });
-    const iv = setInterval(() => (box.isConnected ? refresh() : clearInterval(iv)), 2000);
+    profilesView();
+    const io = new IntersectionObserver(es => {
+      clearInterval(iv);
+      clearTimeout(to);
+      if (es[es.length - 1].isIntersecting) {
+        refresh();
+        iv = setInterval(refresh, 2000);
+      } else if (!box.isConnected) io.disconnect();
+    });
+    io.observe(box);
   },
 });

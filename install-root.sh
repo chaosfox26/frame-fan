@@ -32,7 +32,7 @@ EOT
 systemctl daemon-reload
 systemctl reset-failed frame-fan-stock.service 2>/dev/null || true
 if [ -f /home/steamos/.config/frame-fan/fan.json ]; then
-  /usr/bin/python3 /etc/frame-fan/fan-apply.py
+  /usr/bin/python3 /etc/frame-fan/fan-apply.py || /usr/bin/python3 /etc/frame-fan/fan-apply.py --stock
 else
   systemctl reset-failed deckard-fan-control 2>/dev/null || true
   systemctl restart deckard-fan-control
