@@ -77,4 +77,4 @@ Fan Control builds on Valve's SteamOS fan-control files that are already on the 
 
 ## License
 
-Fan Control is licensed under the GNU General Public License, version 2. The full text is in [LICENSE](LICENSE), and GitHub identifies it as GPL-2.0. The source files do not carry their own license notices.
+Fan Control is licensed under the GNU General Public License, version 2 only. The full text is in [LICENSE](LICENSE), and GitHub identifies it as GPL-2.0. The source files do not carry their own license notices.
