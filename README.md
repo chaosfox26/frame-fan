@@ -1,20 +1,18 @@
-<p align="center"><img src="docs/icon.svg" width="128" height="128" alt="Framy icon"></p>
+<p align="center"><img src="docs/icon.svg" width="128" height="128" alt="Framey icon"></p>
 
-# Fan Control for Framy
+# Fan Control for Framey
 
-> **Framy is an AI-made project, developed by ChaosFox using AI coding tools.**
+> **Framey is an AI-made project, developed by ChaosFox using AI coding tools.**
 >
-> **Framy was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. We gratefully acknowledge that inspiration. Framy is an independent project for Steam Frame, with no claimed affiliation or endorsement.**
+> **Framey was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. We gratefully acknowledge that inspiration. Framey is an independent project for Steam Frame, with no claimed affiliation or endorsement.**
 
-Fan Control is a plugin for [Framy](https://github.com/chaosfox26/framey) that lets you see and change how the Steam Frame's fan behaves from a VR-friendly page inside Steam. It is installed on its own and includes privileged cooling components that run as root. Unofficial and independent of Valve. Changing cooling behavior carries risk, so use it at your own risk.
-
-Naming: the public name is Framy. This repository and its technical identifiers keep the spelling `frame-fan` and `framey` (the `/etc/frame-fan` folder, the `frame-fan` systemd units, the `Framey` JavaScript object). Those identifiers are unchanged.
+Fan Control is a plugin for [Framey](https://github.com/chaosfox26/framey) that lets you see and change how the Steam Frame's fan behaves from a VR-friendly page inside Steam. It is installed on its own and includes privileged cooling components that run as root. Unofficial and independent of Valve. Changing cooling behavior carries risk, so use it at your own risk.
 
 ## Origins and purpose
 
-Framy started from a wish to make the Steam Frame easier to customize through a lightweight, VR-first plugin interface, beginning with convenient fan controls. Fan Control is that first plugin.
+Framey started from a wish to make the Steam Frame easier to customize through a lightweight, VR-first plugin interface, beginning with convenient fan controls. Fan Control is that first plugin.
 
-## The Framy projects
+## The Framey projects
 
 | Project | What it is |
 |---|---|
@@ -41,14 +39,14 @@ This reduces risk but does not remove it. It does not promise that your headset 
 
 ## Install
 
-Needs a Steam Frame running SteamOS, Developer Mode, and [Framy](https://github.com/chaosfox26/framey).
+Needs a Steam Frame running SteamOS, Developer Mode, and [Framey](https://github.com/chaosfox26/framey).
 
-The easy way is the [Framy App](https://github.com/chaosfox26/framey-app): tick **Also install Fan Control**. It will ask for the headset password you set in Developer settings for the root step.
+The easy way is the [Framey App](https://github.com/chaosfox26/framey-app): tick **Also install Fan Control**. It will ask for the headset password you set in Developer settings for the root step.
 
 By hand:
 
 1. Copy this folder to `~/frame-fan` on the headset.
-2. Link it into Framy: `ln -s ~/frame-fan ~/framey/plugins/fan`
+2. Link it into Framey: `ln -s ~/frame-fan ~/framey/plugins/fan`
 3. Run `sudo bash ~/frame-fan/install-root.sh`
 
 The install copies Valve's `deckard-fan-control` files into `/etc/frame-fan`, patches that copy, and adds a systemd drop-in so the original files are never modified. Valve's files are not part of this repository.
@@ -56,12 +54,12 @@ The install copies Valve's `deckard-fan-control` files into `/etc/frame-fan`, pa
 ## Return to stock and removal
 
 - **Stock** in the page switches back to Valve's own fan curve and keeps Fan Control installed.
-- `sudo bash ~/frame-fan/uninstall-root.sh` removes the units, the drop-in and `/etc/frame-fan`, then restarts the stock fan service. The Framy App's **Remove** runs it for you.
+- `sudo bash ~/frame-fan/uninstall-root.sh` removes the units, the drop-in and `/etc/frame-fan`, then restarts the stock fan service. The Framey App's **Remove** runs it for you.
 - `selftest-root.sh` crashes the fan service on purpose to check that the stock fallback works. The fan runs loud for about 25 seconds.
 
 ## Status and verification
 
-Tested on one Steam Frame running SteamOS 0.4.5: applying presets and custom profiles, the graph editor with simulated input, and the crash-recovery self-test. Not verified: the Fan Control root-install step as performed by the current Framy App, behavior on other headsets or SteamOS versions, and long-term use. AI authorship and a working build are not proof of safe operation.
+Tested on one Steam Frame running SteamOS 0.4.5: applying presets and custom profiles, the graph editor with simulated input, and the crash-recovery self-test. Not verified: the Fan Control root-install step as performed by the current Framey App, behavior on other headsets or SteamOS versions, and long-term use. AI authorship and a working build are not proof of safe operation.
 
 ## Roadmap (not implemented)
 
@@ -71,11 +69,11 @@ For how the pieces fit together, see [docs/how-it-works.md](docs/how-it-works.md
 
 ## Inspiration and acknowledgments
 
-Framy was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. Thank you to the Decky Loader maintainers and contributors. Framy aims to bring that kind of convenience to the Steam Frame while respecting the work that inspired it.
+Framey was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. Thank you to the Decky Loader maintainers and contributors. Framey aims to bring that kind of convenience to the Steam Frame while respecting the work that inspired it.
 
 Fan Control contains no Decky Loader code, assets or documentation, and it is not a Decky plugin or compatible with Decky. The project as a whole is not a clean-room implementation: Decky Loader's public source was read for reference while the loader was designed. A comparison of this repository against Decky Loader's source found no identical code lines.
 
-Fan Control builds on Valve's SteamOS fan-control files that are already on the headset (`deckard-fan-control`). It patches a copy at install time and does not redistribute Valve's files. Framy is unofficial and independent of Valve.
+Fan Control builds on Valve's SteamOS fan-control files that are already on the headset (`deckard-fan-control`). It patches a copy at install time and does not redistribute Valve's files. Framey is unofficial and independent of Valve.
 
 ## License
 
