@@ -6,7 +6,7 @@ For developers and the curious. For what Fan Control does, see the [README](../R
 
 | Piece | Runs as | Where |
 |---|---|---|
-| `plugin.json`, `main.js`, `backend.py` | the user, inside Framy | `~/frame-fan`, linked as `~/framey/plugins/fan` |
+| `plugin.json`, `main.js`, `backend.py` | the user, inside Framey | `~/frame-fan`, linked as `~/framey/plugins/fan` |
 | `fan-apply.py` | root | `/etc/frame-fan/fan-apply.py` |
 | patched `fancontrol.py` and config | root | `/etc/frame-fan/fan/` |
 | `frame-fan.path`, `frame-fan.service`, `frame-fan-stock.service` | systemd | `/etc/systemd/system/` |
