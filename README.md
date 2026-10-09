@@ -31,9 +31,9 @@ Framey started from a wish to make the Steam Frame easier to customize through a
 ## Safety
 
 - Valve's 95 °C temperature trip and the kernel's thermal limits are left in place.
-- A curve point at or above 80 °C must run at 80% fan or more. Invalid settings are rejected in the page, again by the backend, and a third time by the root-owned script.
-- If the controller crashes, the fan goes to maximum and stock control is restored automatically. If the temperature sensor stays unreadable, the controller exits and the same recovery runs. The page then shows that stock control was restored.
-- Everything that runs as root lives in `/etc/frame-fan`, owned by root and not writable by your user. The only input your user can write is a small settings file, which is range-checked before it is used.
+- Whenever a temperature sensor reads 80 °C or more, the Fan Control controller never commands less than PWM 78 (about 80%), whatever the profile. This is enforced in the root-owned controller itself. A graph curve that would command less than that at 80 °C is also rejected in the page, again by the backend, and a third time by the root-owned script. Stock mode is Valve's own unmodified curve, so this floor does not apply to it.
+- If the custom controller keeps failing, systemd runs a recovery that removes the Fan Control override, so Valve's own unmodified controller and config run again, and the page shows that stock control was restored. If the temperature sensor stays unreadable, the custom controller exits and ends up in the same recovery. The generated controller is syntax-checked and its edits are checked against Valve's file before use; if that fails, the profile is not activated and stock is restored. A crash is not a guarantee of maximum fan: stock control starts from its own minimum speed.
+- Everything that runs as root lives in `/etc/frame-fan`, owned by root and not writable by your user. The only input your user can write is a small settings file. The root script refuses symlinks, non-regular files and files over 64 KB, and range-checks the contents before use.
 
 This reduces risk but does not remove it. It does not promise that your headset will never overheat or that every failure is handled.
 
@@ -59,7 +59,7 @@ The install copies Valve's `deckard-fan-control` files into `/etc/frame-fan`, pa
 
 ## Status and verification
 
-Tested on one Steam Frame running SteamOS 0.4.5: applying presets and custom profiles, the graph editor with simulated input, and the crash-recovery self-test. Not verified: the Fan Control root-install step as performed by the current Framey App, behavior on other headsets or SteamOS versions, and long-term use. AI authorship and a working build are not proof of safe operation.
+Tested on one Steam Frame running SteamOS 0.4.5, before the safety changes above: applying presets and custom profiles, the graph editor with simulated input, and the crash-recovery self-test. Checked offline only, against copies of Valve's real controller and config with a simulated sensor: the generated controller's curve, the 80 °C floor, the 95 °C maximum branch, the stop path, the unreadable-sensor exit, and the apply script's validation and fallback decisions. Not run on a headset since those changes: the install, uninstall and self-test scripts, the systemd recovery chain, and the page changes. Also not verified: the Fan Control root-install step as performed by the current Framey App, behavior on other headsets or SteamOS versions, and long-term use. AI authorship and a working build are not proof of safe operation.
 
 ## Roadmap (not implemented)
 

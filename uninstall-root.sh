@@ -1,10 +1,12 @@
 #!/bin/bash
+set -e
 D=/etc/systemd/system/deckard-fan-control.service.d
-systemctl disable --now frame-fan.path 2>/dev/null || true
+if [ -e /etc/systemd/system/frame-fan.path ]; then systemctl disable --now frame-fan.path; fi
 rm -f /etc/systemd/system/frame-fan.path /etc/systemd/system/frame-fan.service /etc/systemd/system/frame-fan-stock.service $D/frame-fan.conf
-rmdir $D 2>/dev/null || true
-rm -rf /etc/frame-fan
+if [ -d $D ]; then rmdir --ignore-fail-on-non-empty $D; fi
 systemctl daemon-reload
-systemctl reset-failed deckard-fan-control 2>/dev/null || true
+systemctl reset-failed deckard-fan-control || true
 systemctl restart deckard-fan-control
+sleep 3
 systemctl is-active deckard-fan-control
+rm -rf /etc/frame-fan

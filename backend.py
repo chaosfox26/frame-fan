@@ -14,6 +14,15 @@ BUILTIN = [
 ]
 
 
+def interp(p, t):
+    if t <= p[0][0]:
+        return p[0][1]
+    for (t0, v0), (t1, v1) in zip(p, p[1:]):
+        if t <= t1:
+            return v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return p[-1][1]
+
+
 def valid_points(p):
     ts, vs = [t for t, _ in p], [v for _, v in p]
     return (
@@ -22,7 +31,7 @@ def valid_points(p):
         and all(b - a >= 2 for a, b in zip(ts, ts[1:]))
         and all(30 <= v <= 98 for v in vs)
         and all(b >= a for a, b in zip(vs, vs[1:]))
-        and all(v >= 78 for t, v in p if t >= 80)
+        and interp(p, 80) >= 78
     )
 
 
@@ -47,8 +56,11 @@ def read_int(path):
 
 def hwmon():
     for d in pathlib.Path("/sys/class/hwmon").iterdir():
-        if (d / "name").read_text().strip() == "slg4ax46073v":
-            return d
+        try:
+            if (d / "name").read_text().strip() == "slg4ax46073v":
+                return d
+        except (OSError, ValueError):
+            pass
 
 
 def hottest():

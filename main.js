@@ -18,6 +18,12 @@ Framey.register({
     const pct = v => Math.round((v * 100) / 98);
     const sig = p => (p.stock ? "stock" : p.points ? "p" + JSON.stringify(p.points) : [p.floor, p.ceil, p.t0, p.t1, p.s || 0].join());
     const req = p => (p.stock ? { stock: true } : p.points ? { points: p.points } : { floor: p.floor, ceil: p.ceil, t0: p.t0, t1: p.t1, s: p.s || 0 });
+    const interp = (p, t) => {
+      if (t <= p[0][0]) return p[0][1];
+      for (let i = 1; i < p.length; i++) if (t <= p[i][0]) return p[i - 1][1] + ((p[i][1] - p[i - 1][1]) * (t - p[i - 1][0])) / (p[i][0] - p[i - 1][0]);
+      return p[p.length - 1][1];
+    };
+    const low80 = p => interp(p, 80) < 78;
     const sample = c => {
       const temps = c.floor === c.ceil ? [30, 40, 50, 60, 70, 80, 90] : Array.from({ length: 7 }, (_, i) => Math.round(c.t0 + ((c.t1 - c.t0) * i) / 6));
       for (let i = 1; i < 7; i++) temps[i] = Math.max(temps[i], temps[i - 1] + 2);
@@ -39,6 +45,7 @@ Framey.register({
       if (state.temp === null) w.push("Temperature sensor unavailable");
       if (state.rpm !== null && state.pwm > 40 && state.rpm < 500) w.push("Fan not spinning");
       if (state.applied.fallback) w.push("Custom control failed: stock restored");
+      if (state.applied.error) w.push("Fan service failed to restart");
       warn.textContent = w.join(" | ");
       const on = pending || sig(state.applied);
       tiles.forEach(t => { t.el.style.background = sig(t.p) === on ? "#5585ff" : "#2a2a3a"; });
@@ -158,6 +165,7 @@ Framey.register({
       const line = add("polyline", { fill: "none", stroke: "#5585ff", "stroke-width": 3 });
       const dots = pts.map(() => add("circle", { fill: "#5585ff", stroke: "#fff" }));
       const read = div("font-size:20px;font-weight:700;margin-top:6px");
+      const bad = div("font-size:17px;color:#ff8a8a");
       const redraw = () => {
         line.setAttribute("points", [[25, pts[0][1]], ...pts, [95, pts[pts.length - 1][1]]].map(([t, v]) => X(t) + "," + Y(v)).join(" "));
         dots.forEach((d, i) => {
@@ -166,6 +174,7 @@ Framey.register({
           d.setAttribute("r", i === sel ? 13 : 10);
           d.setAttribute("stroke-width", i === sel ? 4 : 0);
         });
+        bad.textContent = low80(pts) ? "Curve must be at 80% or more by 80 C" : "";
         read.textContent = "Point " + (sel + 1) + "/" + pts.length + ":  " + pts[sel][0] + " C  >  " + fmt(pts[sel][1]);
         const x = X(clamp(state.temp === null ? 25 : state.temp, 25, 95));
         marker.setAttribute("x1", x);
@@ -210,12 +219,12 @@ Framey.register({
       );
       const bar = div("display:flex;gap:8px;margin-top:8px");
       bar.append(
-        button("Apply", "flex:1;height:54px;font-size:21px;background:#5585ff", () => pick({ points: pts.map(p => [...p]) })),
-        button("Save", "flex:1;height:54px;font-size:21px", () => send("save", { name: nextName(), points: pts }).then(profilesView)),
+        button("Apply", "flex:1;height:54px;font-size:21px;background:#5585ff", () => !low80(pts) && pick({ points: pts.map(p => [...p]) })),
+        button("Save", "flex:1;height:54px;font-size:21px", () => !low80(pts) && send("save", { name: nextName(), points: pts }).then(profilesView)),
         button("Stock", "flex:1;height:54px;font-size:21px", () => pick({ stock: true })),
         button("Profiles", "flex:1;height:54px;font-size:21px", profilesView),
       );
-      body.append(svg, read, adj, bar);
+      body.append(svg, read, bad, adj, bar);
       hook = redraw;
       redraw();
     };
@@ -263,7 +272,7 @@ Framey.register({
         button("Save", "flex:1;height:60px;font-size:22px", () => send("save", { name: nextName(), ...cfg }).then(profilesView)),
         button("Profiles", "flex:1;height:60px;font-size:22px", profilesView),
       );
-      body.append(bar);
+      body.append(bar, div("font-size:16px;color:#8a8aa0;margin-top:8px", "From 80 C the fan always runs at 80% or more."));
       sync();
     };
     Framey.call("fan", "get").then(s => { take(s); profilesView(); });
