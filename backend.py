@@ -5,7 +5,7 @@ CONF = pathlib.Path.home() / ".config/frame-fan"
 REQUEST = CONF / "fan.json"
 SAVED = CONF / "fan-profiles.json"
 APPLIED = pathlib.Path("/etc/frame-fan/fan/applied.json")
-DEFAULT = {"floor": 60, "ceil": 98, "t0": 30, "t1": 75, "s": 0}
+DEFAULT = {"stock": True}
 BUILTIN = [
     {"name": "Stock", "stock": True},
     {"name": "Cool", "floor": 40, "ceil": 98, "t0": 45, "t1": 75, "s": 0},
