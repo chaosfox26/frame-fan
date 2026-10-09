@@ -1,4 +1,5 @@
 #!/bin/bash
+[ -n "$FRAME_FAN_LOCKED" ] || FRAME_FAN_LOCKED=1 exec flock -w 60 /run/frame-fan.lock /bin/bash "$0" "$@"
 set -e
 D=/etc/systemd/system/deckard-fan-control.service.d
 ok=

@@ -1,9 +1,12 @@
+import fcntl
+import glob
 import json
 import os
 import re
 import stat
 import subprocess
 import sys
+import time
 
 REQUEST = "/home/steamos/.config/frame-fan/fan.json"
 CONFIG = "/etc/frame-fan/fan/deckard-config.yaml"
@@ -11,6 +14,7 @@ APPLIED = "/etc/frame-fan/fan/applied.json"
 CONTROL = "/etc/frame-fan/fan/fancontrol.py"
 STOCK = "/usr/share/deckard-fan-control/deckard-config.yaml"
 STOCK_CONTROL = "/usr/share/deckard-fan-control/fancontrol.py"
+LOCK = "/run/frame-fan.lock"
 DROPIN = "/etc/systemd/system/deckard-fan-control.service.d/frame-fan.conf"
 UNIT = """[Unit]
 OnFailure=frame-fan-stock.service
@@ -101,9 +105,31 @@ def read_request():
     return json.loads(data)
 
 
+def status():
+    return subprocess.run(["systemctl", "show", "-p", "ActiveState", "-p", "NRestarts", "deckard-fan-control"], capture_output=True, text=True).stdout
+
+
 def restart():
     subprocess.run(["systemctl", "reset-failed", "deckard-fan-control"])
     subprocess.run(["systemctl", "restart", "deckard-fan-control"], check=True)
+    before = status()
+    time.sleep(3)
+    after = status()
+    if before != after or "ActiveState=active" not in after:
+        raise RuntimeError
+
+
+def max_fan():
+    for d in glob.glob("/sys/class/hwmon/*"):
+        try:
+            with open(d + "/name") as f:
+                if f.read().strip() != "slg4ax46073v":
+                    continue
+            with open(d + "/pwm1", "w") as f:
+                f.write("98")
+            return
+        except (OSError, ValueError):
+            pass
 
 
 def go_stock(fallback):
@@ -111,6 +137,7 @@ def go_stock(fallback):
         if os.path.exists(DROPIN):
             os.remove(DROPIN)
         subprocess.run(["systemctl", "daemon-reload"], check=True)
+        max_fan()
         restart()
     except Exception:
         write(APPLIED, json.dumps({"stock": True, "error": True}))
@@ -118,6 +145,17 @@ def go_stock(fallback):
     write(APPLIED, json.dumps({"stock": True, **({"fallback": True} if fallback else {})}))
     raise SystemExit(0)
 
+
+if not os.environ.get("FRAME_FAN_LOCKED"):
+    lock = open(LOCK, "a")
+    for _ in range(600):
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        raise SystemExit(1)
 
 if "--stock" in sys.argv:
     go_stock(True)

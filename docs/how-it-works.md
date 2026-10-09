@@ -16,7 +16,7 @@ For developers and the curious. For what Fan Control does, see the [README](../R
 
 1. The page calls the backend (`Framey.call("fan", "set", ...)`). The backend validates the request and writes `~/.config/frame-fan/fan.json`.
 2. `frame-fan.path` notices the change and starts `frame-fan.service`, which runs `/etc/frame-fan/fan-apply.py` as root.
-3. The script validates the request again, rebuilds the config from Valve's stock files, patches a copy of Valve's `fancontrol.py` and syntax-checks it, writes the systemd drop-in, restarts `deckard-fan-control`, which now runs the copy from `/etc/frame-fan`, and only then writes `applied.json`. If any step fails, it goes back to stock instead.
+3. The script validates the request again, rebuilds the config from Valve's stock files, patches a copy of Valve's `fancontrol.py` and syntax-checks it, writes the systemd drop-in, restarts `deckard-fan-control`, which now runs the copy from `/etc/frame-fan`, waits about 3 seconds and checks that the service is still active with an unchanged restart count, and only then writes `applied.json`. If any step fails, including that check, it goes back to stock instead. The whole script runs under a lock (see below).
 4. The page reads `applied.json`, the fan's hwmon files and the thermal zones to show what is active.
 
 A request is either `{"stock": true}`, a ramp (`floor`, `ceil`, `t0`, `t1`, `s`), or `{"points": [[temp, pwm], ...]}` with six or seven points. Saved profiles live in `~/.config/frame-fan/fan-profiles.json`.
@@ -31,7 +31,11 @@ PWM is 30 to 98. Ramp: `30 <= floor <= ceil <= 98`, `t0 >= 25`, `t0 + 5 <= t1 <=
 
 ## Failure recovery
 
-The drop-in sets `OnFailure=frame-fan-stock.service` with a start limit. When the fan service fails, that unit runs `fan-apply.py --stock`, which deletes the drop-in so the service runs Valve's own unmodified controller and config, clears the failed state, restarts the service and marks the state as a fallback. This covers a bug in the patched controller too, but not a bug in `fan-apply.py` itself. If the restart fails, `applied.json` says so with an error flag. The patched controller's normal stop path sets the fan to maximum; the stock restart does not.
+The drop-in sets `OnFailure=frame-fan-stock.service` with a start limit. When the fan service fails, that unit runs `fan-apply.py --stock`, which deletes the drop-in so the service runs Valve's own unmodified controller and config, clears the failed state, restarts the service and marks the state as a fallback. This covers a bug in the patched controller too, but not a bug in `fan-apply.py` itself. Just before that restart it writes PWM 98 to the fan's `pwm1` if the hwmon device is found; a failed write is ignored. The restart gets the same 3 second stability check as an apply, and if the restart fails or the service is not stable, `applied.json` says so with an error flag. Stock control sets its own minimum speed when it starts, so the maximum write only covers the switch itself.
+
+## Locking
+
+`fan-apply.py` (apply, `--stock` and the failure recovery) takes an exclusive `flock` on `/run/frame-fan.lock`, retrying for up to 60 seconds and exiting with status 1 if it cannot get it. `install-root.sh` and `uninstall-root.sh` re-run themselves under `flock -w 60` on the same file and set `FRAME_FAN_LOCKED=1`, which makes the scripts they call (including each other) skip taking it again. `/run` is root-owned and cleared on reboot.
 
 ## Hardware notes
 
@@ -43,6 +47,6 @@ Everything root runs lives in `/etc/frame-fan`, owned by root and not writable b
 
 ## Scripts
 
-- `install-root.sh`: installs the pieces above, applies the current settings if any exist (otherwise leaves stock running), and enables the path watcher last. On any failure it runs the uninstall script.
-- `uninstall-root.sh`: removes the units, the drop-in and `/etc/frame-fan`, then restarts the stock service. It exits non-zero if any step fails.
+- `install-root.sh` (locked): installs the pieces above, applies the current settings if any exist (otherwise leaves stock running), and enables the path watcher last. On any failure it runs the uninstall script.
+- `uninstall-root.sh` (locked): removes the units, the drop-in and `/etc/frame-fan`, then restarts the stock service. It exits non-zero if any step fails.
 - `selftest-root.sh`: with a custom profile active, kills the fan service repeatedly to check the fallback, then restores your settings.

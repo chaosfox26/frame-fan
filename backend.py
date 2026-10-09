@@ -8,8 +8,8 @@ APPLIED = pathlib.Path("/etc/frame-fan/fan/applied.json")
 DEFAULT = {"floor": 60, "ceil": 98, "t0": 30, "t1": 75, "s": 0}
 BUILTIN = [
     {"name": "Stock", "stock": True},
-    {"name": "Cool", "floor": 60, "ceil": 98, "t0": 30, "t1": 75, "s": 0},
-    {"name": "Cooler", "floor": 75, "ceil": 98, "t0": 30, "t1": 70, "s": 0},
+    {"name": "Cool", "floor": 40, "ceil": 98, "t0": 45, "t1": 75, "s": 0},
+    {"name": "Cooler", "floor": 52, "ceil": 98, "t0": 40, "t1": 70, "s": 0},
     {"name": "100%", "floor": 98, "ceil": 98, "t0": 30, "t1": 75, "s": 0},
 ]
 
