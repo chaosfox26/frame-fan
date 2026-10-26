@@ -6,7 +6,7 @@
 >
 > **Framey was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. We gratefully acknowledge that inspiration. Framey is an independent project for Steam Frame, with no claimed affiliation or endorsement.**
 
-Fan Control is a plugin for [Framey](https://github.com/chaosfox26/framey) that shows and changes the Steam Frame's fan behavior from a page inside Steam. Current version: 1.0.2.
+Fan Control is a plugin for [Framey](https://github.com/chaosfox26/framey) that shows and changes the Steam Frame's fan behavior from a page inside Steam. The source manifest version is 1.0.2.
 
 It is a patched copy of Valve's `deckard-fan-control` controller. Its cooling parts run as root, installed in system locations. Fan Control is unofficial and independent of Valve. Changing cooling behavior carries risk, and you use it at your own risk.
 
@@ -17,6 +17,8 @@ It is a patched copy of Valve's `deckard-fan-control` controller. Its cooling pa
 | [framey](https://github.com/chaosfox26/framey) | The plugin loader that runs on the headset. |
 | [frame-fan](https://github.com/chaosfox26/frame-fan) (this repo) | Fan Control, a plugin with privileged cooling components. |
 | [framey-app](https://github.com/chaosfox26/framey-app) | A desktop app that installs and updates the other two over SSH. |
+
+The `experimental` branch contains source changes beyond the signed releases. It does not change the default update channel: the Framey App still fetches Framey from `main` and Fan Control from the latest signed release. Building the App from its experimental branch does not automatically select experimental Framey or Fan Control sources; the manual App build workflow also pins both bundled repositories to `main`. The source changes described here are not a claim that published installers or release assets include them.
 
 ## What it shows
 
@@ -43,7 +45,7 @@ Between 40 and 90 °C the presets interpolate linearly. Below the first point th
 - **Constant:** one speed, PWM 30 to 98.
 - **Ramp:** an idle floor, a maximum speed, the temperature where the ramp starts (25 to 70 °C), the temperature where it reaches full speed (at least 5 °C above the start, up to 90 °C), and a curve shape from -100 (early) to 100 (late). The speed is the floor up to the start temperature, the maximum from the full-speed temperature on, and never decreases in between for any shape.
 - **Graph:** six or seven points, from 25 to 90 °C, at least 2 °C apart, with PWM 30 to 98 that never decreases as temperature rises. Drag a point, or select it and nudge it with buttons. A curve must give PWM 78 or more at 80 °C.
-- **Saved profiles:** up to eight, named automatically (names are at most 16 characters), switched with one tap and kept in `~/.config/frame-fan/fan-profiles.json` across reboots.
+- **Saved profiles:** up to eight, named automatically (names are at most 16 characters), switched with one tap and kept in `~/.config/frame-fan/fan-profiles.json` across reboots. Active-profile matching uses the requested curve or ramp values, so saved names and status details do not change which profile is highlighted.
 
 The fan takes PWM 30 to 98, roughly 31% to 100%. Fan Control cannot stop the fan or set 0%.
 
@@ -70,7 +72,7 @@ Needs a Steam Frame running SteamOS, Developer Mode, and [Framey](https://github
 
 The recommended way is the [Framey App](https://github.com/chaosfox26/framey-app): tick **Also install Fan Control**. It asks for the headset password for the root step. That one step also authorizes later updates (see Updates), and the password is not stored.
 
-Fan Control is installed only from a release whose signature was verified, and only if that release is not older than the installed version. If the release cannot be fetched or verified, or is older than the installed version, the App skips Fan Control, says so in its log, and still installs Framey. Run Install / Update again when online.
+The App installs Fan Control only from a release whose signature was verified, and only if that release is not older than the installed version. If the release cannot be fetched or verified, or is older than the installed version, the App skips Fan Control, says so in its log, and still installs Framey. Run Install / Update again when online.
 
 A manual root install with `install-root.sh` is possible but unsupported. The scripts assume user `steamos` and take every file they use from the folder they are run from:
 
@@ -101,7 +103,7 @@ If a step fails before the helper runs, the previous files are put back. If the 
 
 **The helper.** `/etc/frame-fan/update-helper` is `update-helper.sh` from this repository, installed root-owned. It accepts exactly one argument, `update` or `rollback`, and takes no repository, URL, path or script from its caller. The sudo rule (`/etc/sudoers.d/frame-fan-update`) allows the `steamos` user to run only those two commands, without a password. The rule is checked with `visudo` before it is put in place.
 
-The [developer update transaction](docs/how-it-works.md#updates) documents its download, signature, archive, backup and installation checks in order. The helper installs only a signed, newer release and writes the version marker after activation succeeds.
+The [developer update transaction](docs/how-it-works.md#updates) documents its download, signature, archive, backup and installation checks in order. The helper installs only a signed, newer release and writes the version marker after activation succeeds. Its archive checks reject links and special files both before and after extraction.
 
 The helper records a SHA-256 digest and member list for the completed backup archive, then verifies both before replacing the previous backup. Before restoring, it verifies them again before removing live files. If the new backup cannot be written or verified, nothing is changed and the old backup stays. A missing digest, including a backup from an older helper, is refused without removing live files. The digest detects accidental corruption; it does not protect against someone who can change the root-owned archive and digest together. If anything fails after the old backup is replaced, the helper restores the backup and checks Valve's service. If that restore also fails, the helper restarts Valve's stock service, and if stock is not active it prints `stock fallback failed: deckard-fan-control is not active` to stderr. `rollback` restores the last backup with no network access. The backup is kept after a successful update so that `rollback` has something to restore, and it is replaced by the next update.
 
@@ -124,7 +126,8 @@ This is failure containment, not a security sandbox: the worker runs as the same
 - **Stock** on the page switches back to Valve's own fan curve and keeps Fan Control installed.
 - **Uninstall:** `sudo bash ~/frame-fan/uninstall-root.sh`. It removes the sudo rule first, then the units and the drop-in, restarts the stock fan service and checks that it is active, and only then removes `/etc/frame-fan` (including the update helper, the version marker and the trust file) and `/var/lib/frame-fan` (the update backup). It does not touch `~/.config/frame-fan`. The Framey App's **Remove** runs the copy of `uninstall-root.sh` built into the App (not a signed release) and also deletes that folder with your settings and saved profiles.
 - **Undo a bad update:** `sudo -n /etc/frame-fan/update-helper rollback`, or **Restore previous version** on the Modules card. Rollback needs the backup from the last successful update; if its archive, digest or member list is missing or corrupt, rollback refuses before removing current files. Older backups without a digest are also refused; a successful new update creates a backup in the current format.
-- **Self-test:** `selftest-root.sh` crashes the fan service on purpose 16 times to check the stock fallback, then reapplies your profile. Run it as root with a custom profile active; it refuses otherwise. It prints `ok:` or `FAIL:` per check, `PASS` or `FAIL` at the end, and exits non-zero on any failure or interruption. The fan runs loud for about 26 seconds.
+- **Missing separate dashboard after a SteamVR restart:** in Framey Settings, choose **Retry** and reselect dashboard mode. This restored the panel in one hardware check; automatic recovery of the separate panel remains an open Framey issue.
+- **Self-test:** `selftest-root.sh` crashes the fan service on purpose 16 times to check the stock fallback, then reapplies your profile. Run it as root with a custom profile active; it refuses otherwise. The stock-ownership check requires successful unit inspection before accepting the absence of Fan Control's override. It prints `ok:` or `FAIL:` per check, `PASS` or `FAIL` at the end, and exits non-zero on any failure or interruption. The fan runs loud for about 26 seconds.
 
 ## Main changes in 1.0.2
 
@@ -139,24 +142,25 @@ Relative to the 1.0.1 build that was tested on a headset:
 
 ## Status and verification
 
-**Tested on a headset:** 1.0.1 installed through the Framey App on one headset (SteamOS 0.4.5) and left on stock control. Framey's panel and Fan Control opened and worked in VR, as reported by the author.
+**Current experimental source, checked on 2026-10-26:** local Framey and Fan Control snapshots were installed with hashes verified on one ARM64 Steam Frame running SteamOS VR 0.5.6 and Python 3.12.3. Fan telemetry and navigation rendered in the real Steam browser. A duplicate request was skipped while its custom profile remained active; custom → Stock → the same custom profile within five seconds reapplied correctly. The original saved settings were restored afterward. The fan service and profile also held through a normal SteamVR restart. This was a direct local deployment, not acceptance of the App installer or the signed helper's update and rollback paths.
 
-**Not tested on a headset:** everything that is new in 1.0.2. That includes the update helper (`update` and `rollback`), the signed update from the Modules page, the throttle, the Cool and Cooler presets, the telemetry, the uninstall and self-test scripts, custom profiles over time, the systemd start-limit chain, the maximum-fan write and read-back on the real fan, the 3-second check against the real service, real `flock` behavior, whether the sensor names match the hwmon names on the headset, how loud or cool the new curves are in a game, and a real sensor failure.
+**Automated checks:** all nine current Fan Control regression checks passed on that ARM64 headset without installing development tools. These inert fixtures cover failed unit inspection, extracted-file checks, request throttling and stamp invalidation, backup digests, and refusal of missing, legacy or corrupt backups before live-file deletion. They use temporary files and substituted service commands; they do not run the real installer, update helper or crash self-test. See [offline check details](docs/how-it-works.md#offline-checks).
 
-**Automated checks, not on Linux:** the checks ran on Windows. The 275-check helper suite passed 275/275 in a scratch copy, run through the test harness. The harness replaces `systemctl`, `curl`, `tar`, `flock`, `visudo`, `sync` and `python3` with stubs, and sudo is not exercised. It covers signature, tar, downgrade, URL, environment, the signal and stock-fallback cases, and the backup check. Offline repro scripts for the controller math, the apply script and the backend ran against copies of Valve's files and a fake sysfs. These do not exercise real systemd, sudo, flock, GitHub or a real signing key. The signing script was run with throwaway keys. The helper's shell scripts have been syntax-checked with `bash -n`, not run on Linux.
+**Historical verification:** 1.0.1 was installed through the Framey App on one headset running SteamOS 0.4.5 and used on stock control. An earlier 275-check helper harness ran on Windows with stubbed commands, and offline controller checks used copied Valve files and fake sensors. Those results do not establish real signed updates, sudo behavior or failure recovery.
 
-**Not verified:** real root and real `sudo`, real systemd, real signal delivery to the installed scripts, real `flock` on `/run`, the real GitHub API and its rate limits, behavior on other headsets or SteamOS versions, and long-term use. A working build and AI-written checks are not proof of safe operation.
+**Still unverified on hardware:** signed updates from the Modules page, helper `update` and `rollback`, current App install/removal, uninstall and the deliberate crash self-test; forced crash/start-limit recovery, sensor failures, thermal stress and emergency maximum-fan behavior; lock contention, interrupted operations and failure recovery; the helper's real sudo environment, GitHub API and rate limits; sustained custom-profile use during games, cooling/noise comparisons, other headsets and other SteamOS versions. Normal operation on one headset does not establish those fault paths or long-term safety.
 
 **Open items:**
-- The sudo rule does not set `env_reset` for the helper. Adding it needs real sudo and a headset to verify.
+
+- The sudo rule does not set `env_reset` for the helper. Adding it needs real sudo verification.
 - The order of the sudoers entries has not been checked with `sudo -n -l` on a headset.
 
 ## Known limitations
 
 - **Manual install trust.** A manual install from `~/frame-fan` runs the files in that folder as root (see Install).
-- **Valve's file layout.** The patch matches exact text in Valve's `fancontrol.py`. If Valve changes that layout, the patch refuses and the headset is left on stock. The copies the patch was checked against have these SHA-256 hashes (SteamOS 0.4.5): `fancontrol.py` `35f47241d76977f9966e0292d3e3cbdd072c753a21ceb63336f5d74b81910b65`, `deckard-config.yaml` `43735f74690189d4e8b942f119a0ab3623f05e3ef940d7506da041635c0ff73c`, `PID.py` `7a2de377b0de560d5df4cdd863d7b5a10d08cd8e1ba8ca28efed4c7a2f464df3`.
+- **Valve's file layout.** The patch matches exact text in Valve's `fancontrol.py`. If Valve changes that layout, the patch refuses and the headset is left on stock. The historical reference copies have these SHA-256 hashes (SteamOS 0.4.5): `fancontrol.py` `35f47241d76977f9966e0292d3e3cbdd072c753a21ceb63336f5d74b81910b65`, `deckard-config.yaml` `43735f74690189d4e8b942f119a0ab3623f05e3ef940d7506da041635c0ff73c`, `PID.py` `7a2de377b0de560d5df4cdd863d7b5a10d08cd8e1ba8ca28efed4c7a2f464df3`.
 - **Signing key.** Whoever holds the release signing key can publish an update that runs as root on every headset that trusts it.
-- **Valve's controller behavior.** The sensor and loop behavior the patch depends on is the behavior of those SteamOS 0.4.5 files.
+- **Valve's controller behavior.** The patch depends on Valve's sensor and loop behavior. The normal SteamOS VR 0.5.6 check above does not verify sensor-failure or thermal-emergency behavior.
 - **Measured speed** is an approximation from one headset.
 
 ## Inspiration and acknowledgments
