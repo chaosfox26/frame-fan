@@ -20,8 +20,8 @@ Framey.register({
     let iv = 0;
     let to = 0;
     const pct = v => Math.round((v * 100) / 98);
-    const sig = p => (p.stock ? "stock" : p.points ? "p" + JSON.stringify(p.points) : [p.floor, p.ceil, p.t0, p.t1, p.s || 0].join());
     const req = p => (p.stock ? { stock: true } : p.points ? { points: p.points } : { floor: p.floor, ceil: p.ceil, t0: p.t0, t1: p.t1, s: p.s || 0 });
+    const sig = p => JSON.stringify(req(p));
     const interp = (p, t) => {
       if (t <= p[0][0]) return p[0][1];
       for (let i = 1; i < p.length; i++) if (t <= p[i][0]) return p[i - 1][1] + ((p[i][1] - p[i - 1][1]) * (t - p[i - 1][0])) / (p[i][0] - p[i - 1][0]);
@@ -123,8 +123,9 @@ Framey.register({
     const fmt = v => pct(v) + "%  " + rpmk(v);
     const nextName = () => {
       const used = state.profiles.map(p => p.name);
-      for (let i = 1; i < 10; i++) if (!used.includes("Custom " + i)) return "Custom " + i;
-      return "Custom 8";
+      let i = 1;
+      while (used.includes("Custom " + i)) i++;
+      return "Custom " + i;
     };
     const modeBar = () => {
       const bar = div("display:flex;gap:10px;margin-bottom:4px");

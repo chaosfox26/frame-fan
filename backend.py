@@ -62,7 +62,7 @@ def clean(a):
         p["s"] = int(a.get("s", 0))
         if 30 <= p["floor"] <= p["ceil"] <= 98 and 25 <= p["t0"] and p["t0"] + 5 <= p["t1"] <= 90 and -100 <= p["s"] <= 100:
             return p
-    except (AttributeError, KeyError, TypeError, ValueError):
+    except (AttributeError, KeyError, OverflowError, TypeError, ValueError):
         pass
 
 
@@ -127,7 +127,7 @@ def hottest():
 def applied():
     try:
         a = json.loads(APPLIED.read_text())
-    except (OSError, ValueError):
+    except (OSError, ValueError, OverflowError, RecursionError):
         return DEFAULT
     c = clean(a)
     if not c:
@@ -138,7 +138,7 @@ def applied():
 def custom():
     try:
         data = json.loads(SAVED.read_text())
-    except (OSError, ValueError):
+    except (OSError, ValueError, OverflowError, RecursionError):
         return []
     if not isinstance(data, list):
         return []

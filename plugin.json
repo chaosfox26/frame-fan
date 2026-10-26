@@ -1,1 +1,1 @@
-{"id": "fan", "name": "Fan Control", "version": "1.0.1"}
+{"id": "fan", "name": "Fan Control", "version": "1.0.2", "source": "https://github.com/chaosfox26/frame-fan", "api": 1, "framey": {"min": "1.0.2"}, "platform": ["linux-aarch64"], "backend": {"timeout": 10, "idle": 120}, "privileged": {"installed": "/etc/frame-fan/.version", "helper": "/etc/frame-fan/update-helper"}}

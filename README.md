@@ -6,11 +6,9 @@
 >
 > **Framey was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. We gratefully acknowledge that inspiration. Framey is an independent project for Steam Frame, with no claimed affiliation or endorsement.**
 
-Fan Control is a plugin for [Framey](https://github.com/chaosfox26/framey) that lets you see and change how the Steam Frame's fan behaves from a VR-friendly page inside Steam. Current version: 1.0.0. It is installed on its own and includes privileged cooling components that run as root. Unofficial and independent of Valve. Changing cooling behavior carries risk, and cooling changes are at your own risk.
+Fan Control is a plugin for [Framey](https://github.com/chaosfox26/framey) that shows and changes the Steam Frame's fan behavior from a page inside Steam. Current version: 1.0.2.
 
-## Origins and purpose
-
-Framey started from a wish to make the Steam Frame easier to customize through a lightweight, VR-first plugin interface, beginning with convenient fan controls. Fan Control is that first plugin.
+It is a patched copy of Valve's `deckard-fan-control` controller. Its cooling parts run as root, installed in system locations. Fan Control is unofficial and independent of Valve. Changing cooling behavior carries risk, and you use it at your own risk.
 
 ## The Framey projects
 
@@ -18,90 +16,159 @@ Framey started from a wish to make the Steam Frame easier to customize through a
 |---|---|
 | [framey](https://github.com/chaosfox26/framey) | The plugin loader that runs on the headset. |
 | [frame-fan](https://github.com/chaosfox26/frame-fan) (this repo) | Fan Control, a plugin with privileged cooling components. |
-| [framey-app](https://github.com/chaosfox26/framey-app) | A portable desktop app that installs and updates the other two over SSH. |
+| [framey-app](https://github.com/chaosfox26/framey-app) | A desktop app that installs and updates the other two over SSH. |
 
-## What it does today
+## What it shows
 
-- **Live readings:** temperature (the hottest of the 13 CPU and GPU sensors Valve's controller reads, with one decimal and the sensor's name), the *commanded* fan speed, the *measured* fan speed and the RPM. Commanded is the PWM value read back from the fan controller, shown as a percentage of 98. Measured is derived from the tachometer reading with an approximate calibration. They can differ briefly while the fan speeds up or slows down. The page warns about a missing temperature sensor, a fan that does not appear to be spinning, a fallback to stock control, a failed fan service restart, or a failed maximum-fan write before a stock restart. The temperature shown is the instantaneous reading of the hottest of those sensors; Valve's controller works on a one second average with its own hysteresis, so the two can differ by a degree or so after a peak. If none of those sensors exist, the page falls back to the hottest CPU or GPU thermal zone. A newly chosen profile takes a few seconds to show as active, because it is reported only after the service has restarted and proven stable.
-- **Presets:**
-  - **Stock:** Valve's own unmodified controller and config.
-  - **Cool:** a six-point curve, PWM 32 up to 40 °C, then 38 at 50 °C, 47 at 60 °C, 58 at 70 °C, 78 at 80 °C and 98 at 90 °C.
-  - **Cooler:** PWM 36 up to 40 °C, then 45 at 50 °C, 56 at 60 °C, 68 at 70 °C, 80 at 80 °C and 98 at 90 °C.
-  - **100%:** constant PWM 98.
-- **Custom profiles:** *Constant* (one speed), *Ramp* (idle floor, max speed, the temperature where the ramp starts, the temperature where it reaches full speed, and an early or late curve shape: the speed is the floor up to the start temperature, the max speed from the full-speed temperature on, and never decreases in between), and a *Graph* editor with seven points (curves of six or seven points are accepted) where you drag points or select and nudge them with buttons.
-- **Saved profiles:** up to eight, auto-named, switched with one tap and kept across reboots.
-- The fan (hwmon device `slg4ax46073v`) takes PWM 30 to 98, roughly 31% to 100%. Fan Control cannot stop the fan or set 0%.
-- The presets and every custom mode are functions of temperature only. Valve's stock controller also adds a term that depends on the headset's power draw; Fan Control's patched controller does not, so the curve you see is the speed you get (the 80 °C floor and the 95 °C trip always apply on top). Stock keeps Valve's behavior.
+- **Temperature:** the hottest of the 13 CPU and GPU sensors that Valve's config lists, with one decimal and the sensor's name. These are the hwmon nodes that Valve's controller reads. The value is the instantaneous reading; Valve's controller averages its own samples, so the two can differ by about a degree after a peak. If none of the 13 sensors can be read, the page falls back to the hottest CPU or GPU thermal zone.
+- **Commanded speed:** the PWM value read back from the fan controller, shown as a percentage of 98 (rounded).
+- **Measured speed:** the fan's RPM, and a percentage derived from it with an approximate calibration of 172 RPM per percent, taken from one headset. The commanded and measured values can differ briefly while the fan speeds up or slows down.
+- **Warnings:** a temperature sensor is missing; the fan does not appear to be spinning (commanded PWM above 40 and RPM below 500); a custom profile failed and stock was restored; the fan service failed to restart; or the maximum-fan write failed before a stock restart.
+
+A newly chosen profile shows as active only after the fan service has restarted and stayed up for about 3 seconds. Until then the page shows it as pending, for at most 15 seconds.
+
+## Presets
+
+| Preset | Curve (PWM, read as a function of temperature) |
+|---|---|
+| **Stock** | Valve's own unmodified controller and config. Fan Control's floor and custom curves do not apply. |
+| **Cool** | PWM 32 up to 40 °C, then 38 at 50 °C, 47 at 60 °C, 58 at 70 °C, 78 at 80 °C and 98 at 90 °C. Linear between points. |
+| **Cooler** | PWM 36 up to 40 °C, then 45 at 50 °C, 56 at 60 °C, 68 at 70 °C, 80 at 80 °C and 98 at 90 °C. Linear between points. |
+| **100%** | Constant PWM 98. |
+
+Between 40 and 90 °C the presets interpolate linearly. Below the first point the value is the first point's PWM, and above 90 °C it is 98.
+
+## Custom profiles
+
+- **Constant:** one speed, PWM 30 to 98.
+- **Ramp:** an idle floor, a maximum speed, the temperature where the ramp starts (25 to 70 °C), the temperature where it reaches full speed (at least 5 °C above the start, up to 90 °C), and a curve shape from -100 (early) to 100 (late). The speed is the floor up to the start temperature, the maximum from the full-speed temperature on, and never decreases in between for any shape.
+- **Graph:** six or seven points, from 25 to 90 °C, at least 2 °C apart, with PWM 30 to 98 that never decreases as temperature rises. Drag a point, or select it and nudge it with buttons. A curve must give PWM 78 or more at 80 °C.
+- **Saved profiles:** up to eight, named automatically (names are at most 16 characters), switched with one tap and kept in `~/.config/frame-fan/fan-profiles.json` across reboots.
+
+The fan takes PWM 30 to 98, roughly 31% to 100%. Fan Control cannot stop the fan or set 0%.
+
+The presets and every custom mode depend on temperature only. Valve's stock controller also adds a term that depends on the power drawn by the headset. Fan Control's patched controller does not use that term, so the curve you select is the speed you get. Stock keeps Valve's behavior.
 
 ## Safety
 
-- Valve's 95 °C temperature trip and the kernel's thermal limits are left in place.
-- Whenever a temperature sensor reads 80 °C or more, the Fan Control controller commands at least PWM 78 (about 80%) in every mode: graph curve, ramp and constant. This is enforced on the output of the root-owned patched controller. Graph curves that would command less than that at 80 °C are also rejected by the page, by the backend, and by the root-owned script. Stock is Valve's unmodified controller, so this floor does not apply to it.
-- The patched controller is built from Valve's own file by exact-string edits and is syntax-checked first. It keeps Valve's `self.fan_max_speed`. If the patch or the generated config does not validate, or a step of applying fails, the profile is not activated and stock is restored. A request that fails the range checks is rejected and nothing changes.
-- If one of Valve's monitored temperature sensors cannot be read at start-up, the patched controller treats it as being at Valve's 95 °C limit, so the fan runs at maximum. If one sensor fails more than 20 reads in a row (about 4 seconds), the patched controller exits, and Valve's stop step then sets the fan to maximum (PWM 98) instead of crashing and leaving it at the profile's floor, as Valve's own controller does. This applies to the patched controller only: after a switch to stock, Valve's unmodified controller has its original behavior in this situation and can leave the fan at its minimum. If the fan service keeps failing and hits the start limit set in the drop-in (10 starts in 20 seconds), systemd runs a recovery that removes the Fan Control override, so Valve's unmodified controller and config run again, and the page shows that stock control was restored. A crash loop with a cycle of about 2 seconds or longer never reaches that limit, so in that case the patched controller keeps restarting (with the fan at maximum on the unreadable-sensor path) instead of falling back.
-- Every switch to stock made by Fan Control's apply script (the page's Stock, and the automatic recovery) first writes PWM 98 to the fan and reads it back, then restarts the service. If the fan device is missing or the write or read-back fails, the switch still goes ahead, the failure is printed to the journal and recorded in `applied.json` as `"max": false`, and the page shows "Maximum fan write failed before stock restart". The write narrows the gap in cooling during the switch but does not guarantee maximum fan afterwards: Valve's stock stop and start steps rewrite the fan speed within about a second. The install without saved settings and the uninstall restart the stock service directly, without this write.
-- After each restart of the fan service made by the apply script, Fan Control waits about 3 seconds and checks that the service is active and has not restarted itself. Only then is the new setting recorded as applied. This shows that the service held for about 3 seconds, not that it stays healthy. If the check fails, it falls back to stock, and if stock does not hold either, the state is recorded as an error and the page shows "Fan service failed to restart".
-- Applying, falling back, installing and uninstalling take one shared lock (`/run/frame-fan.lock`, waiting up to 60 seconds), so they cannot overlap. A request that cannot get the lock in time is not applied. The automatic stock recovery is the exception: after the wait it goes ahead without the lock, so a stuck run cannot block it. Each `systemctl` call made by the apply script times out after 30 seconds.
-- Once installed, everything that runs continuously as root lives in `/etc/frame-fan` and `/etc/systemd/system`, owned by root and not writable by your user. The only input your user can write is a small settings file. The root script rejects symlinks, non-regular files and files over 64 KB, and range-checks the contents before use.
-- Trust boundary at install time: `install-root.sh`, `uninstall-root.sh`, `selftest-root.sh` and the source `fan-apply.py` stay in `~/frame-fan`, which your user (and so every plugin running as that user) can write. The Framey App performs the install, update and removal by running them through `sudo` from that folder, and a failed install runs `~/frame-fan/uninstall-root.sh` as root. Whatever is in those files at that moment runs as root, so anything able to modify them before you next enter the headset password could run as root. This is not changed here; only install on a headset where you trust everything that runs as the `steamos` user.
-- `install-root.sh` and `uninstall-root.sh` stop at the first failing step. A failed install rolls itself back by running the uninstall. A saved settings file that is stale or invalid does not fail the install: the apply is replaced by a stock hand-over and the page shows the fallback warning.
+These are the invariants as the code implements them. They reduce risk; they do not remove it.
 
-This reduces risk but does not remove it. It does not promise that your headset will never overheat or that every failure is handled.
-
-## Fixed in 1.0
-
-The earlier public version had these problems, all fixed in 1.0.0:
-
-- The patched controller dropped Valve's `self.fan_max_speed` and would have crashed at Valve's emergency branch for maximum temperature.
-- The 80 °C minimum was checked only on stored curve points, not on the commanded output.
-- Stock and the failure fallback kept running the patched controller instead of Valve's own.
-- Failed removal or install steps were not reported.
-- The applied profile could be shown before the service restart had succeeded.
-
-The Framey App's earlier 1.0.x releases were withdrawn and replaced. See the [release history](https://github.com/chaosfox26/framey-app#release-history).
+- **Valve's maximum-temperature branch stays.** When a sensor reaches its limit, the controller commands the maximum (PWM 98). The limit is 95 °C from Valve's config, or the sensor's hwmon critical temperature when that is between 60 and 95 °C. This project does not change the kernel's own thermal limits.
+- **PWM 78 or higher from 80 °C.** While any of the 13 sensors reads 80 °C or more, the patched controller commands at least PWM 78 in every custom mode (graph, ramp and constant). The page, the backend and the root-owned apply script all reject a graph that would give less than PWM 78 at 80 °C. Stock is Valve's unmodified controller, so this floor does not apply to it.
+- **Starts at maximum.** The patched controller sets the fan to its maximum before its first decision.
+- **Unreadable sensors.** A sensor that cannot be read at start-up is treated as being at its limit, so the fan runs at maximum. If one sensor fails more than 20 reads in a row (about 4 seconds at the 0.2 second sample interval), the patched controller exits, and systemd's stop step sets the fan to maximum (PWM 98).
+- **Start limit and stock recovery.** The drop-in sets `OnFailure=frame-fan-stock.service` and a start limit of 10 starts in 20 seconds. When the limit is reached, the recovery removes the Fan Control drop-in, so Valve's unmodified controller and config run again, and the page shows that stock control was restored. A crash loop that restarts more slowly than that never reaches the limit, so the patched controller keeps restarting instead of falling back.
+- **Maximum before stock.** Every switch to stock made by the apply script (the page's Stock and the automatic recovery) first writes PWM 98 to the fan and reads it back, then restarts the service. If the write or read-back fails, the switch still goes ahead, and the page shows "Maximum fan write failed before stock restart". Valve's stock stop and start steps can rewrite the fan speed shortly afterwards, so this write does not guarantee maximum speed after the switch.
+- **Stability check.** After each restart made by the apply script, the service must be active, with an unchanged restart count, after about 3 seconds. Otherwise the apply falls back to stock. If stock does not hold either, the page shows "Fan service failed to restart".
+- **Lock.** Applying, falling back, installing, updating and uninstalling share one lock, `/run/frame-fan.lock`, which waits up to 60 seconds. A request that cannot get the lock is not applied. The automatic stock recovery goes ahead without the lock, so a stuck run cannot block it. Each `systemctl` call in the apply script times out after 30 seconds.
+- **Root ownership.** Once installed, the code that runs as root lives in `/etc/frame-fan` and `/etc/systemd/system`, owned by root and not writable by your user. The only input your user can write is `~/.config/frame-fan/fan.json`. The root script reads it as data: it rejects symlinks, non-regular files and files over 64 KB, and range-checks the contents before use. A request that fails the range checks is rejected and nothing changes.
+- **Failed applies keep the old state.** If the patched controller cannot be built or validated, or a step fails, the profile is not activated and stock is restored.
 
 ## Install
 
 Needs a Steam Frame running SteamOS, Developer Mode, and [Framey](https://github.com/chaosfox26/framey).
 
-The officially recommended way is the [Framey App](https://github.com/chaosfox26/framey-app): tick **Also install Fan Control**. It will ask for the headset password you set in Developer settings for the root step.
+The recommended way is the [Framey App](https://github.com/chaosfox26/framey-app): tick **Also install Fan Control**. It asks for the headset password for the root step. That one step also authorizes later updates (see Updates), and the password is not stored.
 
-A manual root install with `install-root.sh` is possible but unsupported. The scripts assume user `steamos` and this folder at `/home/steamos/frame-fan`:
+Fan Control is installed only from a release whose signature was verified, and only if that release is not older than the installed version. If the release cannot be fetched or verified, or is older than the installed version, the App skips Fan Control, says so in its log, and still installs Framey. Run Install / Update again when online.
+
+A manual root install with `install-root.sh` is possible but unsupported. The scripts assume user `steamos` and take every file they use from the folder they are run from:
 
 1. Copy this folder to `~/frame-fan` on the headset.
 2. Link it into Framey: `mkdir -p ~/framey/plugins && ln -s ~/frame-fan ~/framey/plugins/fan`
-3. Run `sudo bash ~/frame-fan/install-root.sh`
+3. Run `sudo bash ~/frame-fan/install-root.sh --signer-fp SHA256:sumclwMiONyyDcNbUAtihk4QQHu8PtIkneKbnNkMt9A`. The script refuses to run without `--signer-fp`, and it installs the update trust file only if the key in `release-signing/allowed_signers` has exactly that fingerprint.
 
-The install copies Valve's `deckard-fan-control` files into `/etc/frame-fan`, patches that copy when a profile is applied, and uses a systemd drop-in so the original files are never modified. Valve's files are not part of this repository.
+A manual run uses the files in `~/frame-fan` as root, so anything that can change those files before you enter the password can run as root. Only install this way on a headset where you trust everything that runs as the `steamos` user.
 
-## Return to stock and removal
+The install copies Valve's `deckard-fan-control` files into `/etc/frame-fan/fan`, patches that copy when a profile is applied, and uses a systemd drop-in, so Valve's original files are not modified. Valve's files are not part of this repository. The install also puts in the root-owned update helper, the update trust file and a sudo rule that allows only the helper's two commands. A failed install rolls itself back by running the uninstall script from the same folder. An interrupt (INT, TERM or HUP) during the install also runs that uninstall.
 
-- **Stock** in the page switches back to Valve's own fan curve and keeps Fan Control installed.
-- `sudo bash ~/frame-fan/uninstall-root.sh` removes the units and the drop-in, restarts the stock fan service and checks that it is active, and only then removes `/etc/frame-fan`. The script leaves `~/.config/frame-fan` alone; the Framey App's **Remove** runs the script and also deletes that folder with your settings and saved profiles.
-- `selftest-root.sh` crashes the fan service on purpose to check that the stock fallback works, then reapplies your profile. Run it as root with a custom profile active; it refuses otherwise. It checks that the fallback was recorded, that the service is active and runs Valve's unit, and that your profile was restored, prints `ok:` or `FAIL:` per check and `PASS` or `FAIL` at the end, and exits non-zero on any failure or interruption (your profile is restored in either case). The fan runs loud for about 25 seconds. It has not been run on a headset.
+If the saved settings file is stale or invalid, the install does not fail. It hands over to stock and the page shows the fallback warning.
+
+## Updates
+
+After the one-time install, Fan Control can be updated from inside the headset. The password is never stored and is not typed in VR.
+
+**From the page.** In Framey's panel, open **Modules**, tap **Check for updates**, then **Update** on the Fan Control card (or **Update all**). The loader:
+
+1. looks up the latest release of `chaosfox26/frame-fan` on GitHub, and refuses unless its tag is newer than the installed version;
+2. downloads `frame-fan.tar.gz` and its `.sig` from `github.com`, and if GitHub published a `sha256:` digest for the tarball, refuses on a mismatch;
+3. verifies the release signature against `/etc/frame-fan/allowed_signers`;
+4. checks the package: same plugin id, newer version, the protected-component declaration, and compatibility with this Framey, API generation and headset;
+5. swaps the user-level files (`main.js`, `backend.py`, `plugin.json`) in and runs `sudo -n /etc/frame-fan/update-helper update`;
+6. requires `/etc/frame-fan/.version` to show the new version.
+
+If a step fails before the helper runs, the previous files are put back. If the helper fails after the swap, the card shows a partial update and offers **Retry protected step**, **Check again** and **Restore previous version**. **Repair** cannot repair the root-owned part. Rerun **Install / Update** in the Framey App for that. The update helper refuses a version that is not newer than the installed one; the Framey App refuses a release older than the installed one. The one-time manual `install-root.sh` does not compare versions. To go back, use **Restore previous version** (which runs `update-helper rollback`).
+
+**The helper.** `/etc/frame-fan/update-helper` is `update-helper.sh` from this repository, installed root-owned. It accepts exactly one argument, `update` or `rollback`, and takes no repository, URL, path or script from its caller. The sudo rule (`/etc/sudoers.d/frame-fan-update`) allows the `steamos` user to run only those two commands, without a password. The rule is checked with `visudo` before it is put in place.
+
+The [developer update transaction](docs/how-it-works.md#updates) documents its download, signature, archive, backup and installation checks in order. The helper installs only a signed, newer release and writes the version marker after activation succeeds.
+
+The helper records a SHA-256 digest and member list for the completed backup archive, then verifies both before replacing the previous backup. Before restoring, it verifies them again before removing live files. If the new backup cannot be written or verified, nothing is changed and the old backup stays. A missing digest, including a backup from an older helper, is refused without removing live files. The digest detects accidental corruption; it does not protect against someone who can change the root-owned archive and digest together. If anything fails after the old backup is replaced, the helper restores the backup and checks Valve's service. If that restore also fails, the helper restarts Valve's stock service, and if stock is not active it prints `stock fallback failed: deckard-fan-control is not active` to stderr. `rollback` restores the last backup with no network access. The backup is kept after a successful update so that `rollback` has something to restore, and it is replaced by the next update.
+
+The helper never writes under `/home/steamos`. Its `allowed_signers` is written only by the one-time install, never by an update.
+
+**Trust.** HTTPS and a checksum alone are not enough. The signature is the publisher's proof: an ed25519 key, installed on the headset by the one-time install after a fingerprint check. The loader also compares the digest GitHub lists for the tarball, but the root helper relies on the signature alone. The full procedure, and what is not covered, is in [docs/release-signing.md](docs/release-signing.md).
+
+**Throttle.** The helper makes one unauthenticated GitHub API call per run, so GitHub's rate limit can refuse an update, and the loader then reports a rate-limit message. Separately, the apply script throttles fan changes: an identical request sent again within 5 seconds of its last successful apply is skipped, and a different request sent less than 2 seconds after the last successful apply waits for the remainder of that 2 seconds, then applies the newest request. Stock is never throttled. Switching to stock, falling back after a failed apply, replacing custom state, install/restore activation and uninstall invalidate the old success stamp. Returning to a previous profile then applies immediately; ordinary duplicate requests still skip while that profile remains active.
+
+`plugin.json` carries `"framey": {"min": "1.0.2"}`, `"platform": ["linux-aarch64"]`, `"api": 1`, and a `privileged` block that names the installed version marker and the helper. The loader refuses an install or update that does not match these. They are metadata, not authenticity: the release signature is the authenticity check.
+
+## How the backend runs
+
+The page talks to `backend.py`. The loader runs it in its own worker process, started on the first call from the page and stopped after 120 seconds without a call. A call that takes longer than 10 seconds is abandoned, and a worker that stops answering is killed. The backend does not use `sudo` and cannot gain privileges; it only writes `~/.config/frame-fan/fan.json` and `fan-profiles.json`, each through a temporary file and a rename. The root parts are started by a systemd path unit, not by the backend.
+
+This is failure containment, not a security sandbox: the worker runs as the same user and can read that user's files. The loader and its workers share one memory limit for the Framey service. The Framey App's unit file sets `MemoryHigh=128M` and `MemoryMax=150M`; memory use was not measured on a headset.
+
+## Stock, uninstall and recovery
+
+- **Stock** on the page switches back to Valve's own fan curve and keeps Fan Control installed.
+- **Uninstall:** `sudo bash ~/frame-fan/uninstall-root.sh`. It removes the sudo rule first, then the units and the drop-in, restarts the stock fan service and checks that it is active, and only then removes `/etc/frame-fan` (including the update helper, the version marker and the trust file) and `/var/lib/frame-fan` (the update backup). It does not touch `~/.config/frame-fan`. The Framey App's **Remove** runs the copy of `uninstall-root.sh` built into the App (not a signed release) and also deletes that folder with your settings and saved profiles.
+- **Undo a bad update:** `sudo -n /etc/frame-fan/update-helper rollback`, or **Restore previous version** on the Modules card. Rollback needs the backup from the last successful update; if its archive, digest or member list is missing or corrupt, rollback refuses before removing current files. Older backups without a digest are also refused; a successful new update creates a backup in the current format.
+- **Self-test:** `selftest-root.sh` crashes the fan service on purpose 16 times to check the stock fallback, then reapplies your profile. Run it as root with a custom profile active; it refuses otherwise. It prints `ok:` or `FAIL:` per check, `PASS` or `FAIL` at the end, and exits non-zero on any failure or interruption. The fan runs loud for about 26 seconds.
+
+## Main changes in 1.0.2
+
+Relative to the 1.0.1 build that was tested on a headset:
+
+- The **Cool** and **Cooler** presets, defined as curve points (see Presets).
+- Temperature telemetry from Valve's 13 hwmon sensors, shown with the sensor's name.
+- Custom curves depend on temperature only; the power term of Valve's stock controller is not used.
+- Apply-path checks: maximum-fan write and read-back before stock restarts, the 3-second stability check, the shared lock, a fallback to stock when saved settings are invalid, and a throttle on repeated requests.
+- Backend hardening: malformed saved files are ignored, and the state files are written atomically.
+- Signed in-headset updates through the root-owned helper, with rollback, and the Modules card to drive them.
 
 ## Status and verification
 
-Checked offline, against Valve's real `fancontrol.py`, config and `PID.py` copied read-only from a headset (SteamOS 0.4.5), with a simulated sensor: the generated controller for the presets and for ramps with curve shapes from -100 to 100 (never decreasing, the floor up to the start temperature, the ceiling from the full-speed temperature, no dependence on power), the 80 °C floor of PWM 78 and the 95 °C branch for every mode, the stop path and the unreadable-sensor exit (fan at maximum, no crash), and the apply script's validation and fallback decisions. Also checked offline, with a mocked systemd and fan controller: that PWM 98 is written and read back before the stock restart and that a failed write is recorded and does not block the restart, that an unstable service after restart leads to the stock fallback or the error state, that the stock recovery still runs when the lock cannot be taken, and that the install, uninstall and self-test scripts behave as described with stubbed commands. The page logic (pending selection, error display, polling that stops when the panel is closed) and the temperature readout were checked with a simulated page and a fake sysfs. Earlier versions of the controller logic had run on one headset (Steam Frame, SteamOS 0.4.5).
+**Tested on a headset:** 1.0.1 installed through the Framey App on one headset (SteamOS 0.4.5) and left on stock control. Framey's panel and Fan Control opened and worked in VR, as reported by the author.
 
-**Tested on a headset:** installed through the Framey App 1.0.1 on one headset (SteamOS 0.4.5) and left on stock control; Framey's panel opened and Fan Control worked there.
+**Not tested on a headset:** everything that is new in 1.0.2. That includes the update helper (`update` and `rollback`), the signed update from the Modules page, the throttle, the Cool and Cooler presets, the telemetry, the uninstall and self-test scripts, custom profiles over time, the systemd start-limit chain, the maximum-fan write and read-back on the real fan, the 3-second check against the real service, real `flock` behavior, whether the sensor names match the hwmon names on the headset, how loud or cool the new curves are in a game, and a real sensor failure.
 
-**Not yet tested on a headset:** the uninstall and self-test scripts end to end, applying and keeping a custom profile over time, the systemd failure chain (`OnFailure` and the start limit), the maximum PWM write and read-back on the real fan, the 3 second stability check against the real service, and real `flock` behavior. Also untested: that the settings file written by atomic rename still triggers the systemd path watcher, that the page stops its timers when Framey's panel is closed (it relies on the browser's visibility reporting in Steam's UI), that the 13 sensor names match the hwmon names on the headset, how loud or cool the new Cool and Cooler curves are in a real game, and the unreadable-sensor path with a real sensor failure. Also not verified: the root-install step as performed by the current Framey App, behavior on other headsets or SteamOS versions, and long-term use. AI authorship and a working build are not proof of safe operation.
+**Automated checks, not on Linux:** the checks ran on Windows. The 275-check helper suite passed 275/275 in a scratch copy, run through the test harness. The harness replaces `systemctl`, `curl`, `tar`, `flock`, `visudo`, `sync` and `python3` with stubs, and sudo is not exercised. It covers signature, tar, downgrade, URL, environment, the signal and stock-fallback cases, and the backup check. Offline repro scripts for the controller math, the apply script and the backend ran against copies of Valve's files and a fake sysfs. These do not exercise real systemd, sudo, flock, GitHub or a real signing key. The signing script was run with throwaway keys. The helper's shell scripts have been syntax-checked with `bash -n`, not run on Linux.
 
-## Roadmap (not implemented)
+**Not verified:** real root and real `sudo`, real systemd, real signal delivery to the installed scripts, real `flock` on `/run`, the real GitHub API and its rate limits, behavior on other headsets or SteamOS versions, and long-term use. A working build and AI-written checks are not proof of safe operation.
 
-- A temperature and fan readout shown over flat-screen games. Nothing like this exists yet.
+**Open items:**
+- The sudo rule does not set `env_reset` for the helper. Adding it needs real sudo and a headset to verify.
+- The order of the sudoers entries has not been checked with `sudo -n -l` on a headset.
 
-For how the pieces fit together, see [docs/how-it-works.md](docs/how-it-works.md).
+## Known limitations
+
+- **Manual install trust.** A manual install from `~/frame-fan` runs the files in that folder as root (see Install).
+- **Valve's file layout.** The patch matches exact text in Valve's `fancontrol.py`. If Valve changes that layout, the patch refuses and the headset is left on stock. The copies the patch was checked against have these SHA-256 hashes (SteamOS 0.4.5): `fancontrol.py` `35f47241d76977f9966e0292d3e3cbdd072c753a21ceb63336f5d74b81910b65`, `deckard-config.yaml` `43735f74690189d4e8b942f119a0ab3623f05e3ef940d7506da041635c0ff73c`, `PID.py` `7a2de377b0de560d5df4cdd863d7b5a10d08cd8e1ba8ca28efed4c7a2f464df3`.
+- **Signing key.** Whoever holds the release signing key can publish an update that runs as root on every headset that trusts it.
+- **Valve's controller behavior.** The sensor and loop behavior the patch depends on is the behavior of those SteamOS 0.4.5 files.
+- **Measured speed** is an approximation from one headset.
 
 ## Inspiration and acknowledgments
 
-Framey was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. Thank you to the Decky Loader maintainers and contributors. Framey aims to bring that kind of convenience to the Steam Frame while respecting the work that inspired it.
-
-Fan Control contains no Decky Loader code, assets or documentation, and it is not a Decky plugin or compatible with Decky. The project as a whole is not a clean-room implementation: Decky Loader's public source was read for reference while the loader was designed. A comparison of this repository against Decky Loader's source found no identical code lines.
+Framey was inspired by [Decky Loader](https://github.com/SteamDeckHomebrew/decky-loader) and its contributors’ work making Steam Deck customization accessible through plugins. Thank you to the Decky Loader maintainers and contributors.
 
 Fan Control builds on Valve's SteamOS fan-control files that are already on the headset (`deckard-fan-control`). It patches a copy when a profile is applied and does not redistribute Valve's files. Framey is unofficial and independent of Valve.
 
+Fan Control is not a Decky plugin and is not compatible with Decky Loader.
+
 ## License
 
-Fan Control is licensed under the GNU General Public License, version 2 only. The full text is in [LICENSE](LICENSE), and GitHub identifies it as GPL-2.0. The source files do not carry their own license notices.
+Fan Control is licensed under the GNU General Public License, version 2 only (GPL-2.0-only). The full text is in [LICENSE](LICENSE). The source files do not carry their own license notices.
+
+For how the pieces fit together, see [docs/how-it-works.md](docs/how-it-works.md).

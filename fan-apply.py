@@ -15,6 +15,7 @@ CONTROL = "/etc/frame-fan/fan/fancontrol.py"
 STOCK = "/usr/share/deckard-fan-control/deckard-config.yaml"
 STOCK_CONTROL = "/usr/share/deckard-fan-control/fancontrol.py"
 LOCK = "/run/frame-fan.lock"
+STAMP = "/run/frame-fan.stamp"
 DROPIN = "/etc/systemd/system/deckard-fan-control.service.d/frame-fan.conf"
 UNIT = """[Unit]
 OnFailure=frame-fan-stock.service
@@ -42,6 +43,7 @@ INTERP = '''    def custom(self, t):
 
 '''
 EDITS = [
+    ("        self.set_speed(self.min_speed)\n", "        self.set_speed(self.max_speed)\n        self._reset_hysteresis()\n"),
     ("        self.fan_max_speed = fan_max_speed\n", '        self.fan_max_speed = fan_max_speed\n        self.curve = config.get("curve")\n        self.ramp = config.get("ramp")\n        self.read_failures = 0\n        self.measured_temp = self.max_temp\n'),
     ("                    self.n_poll_requests = 0\n", "                    self.n_poll_requests = 0\n                    self.read_failures = 0\n"),
     ("                print('An exception occurred when attempting to read temp: {}'.format(e))\n", "                print('An exception occurred when attempting to read temp: {}'.format(e))\n                self.read_failures += 1\n                if self.read_failures > 20:\n                    raise SystemExit('temperature unreadable')\n"),
@@ -53,6 +55,8 @@ EDITS = [
 def write(path, data, mode=0o644):
     with open(path + ".tmp", "w") as f:
         f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
     os.chmod(path + ".tmp", mode)
     os.replace(path + ".tmp", path)
 
@@ -65,7 +69,8 @@ def sub(pat, rep, text, n=1):
 
 
 def patched():
-    src = open(STOCK_CONTROL).read()
+    with open(STOCK_CONTROL) as f:
+        src = f.read()
     for old, new in EDITS:
         if src.count(old) != 1:
             raise ValueError(old)
@@ -86,7 +91,7 @@ def interp(p, t):
 def valid_points(p):
     if not 6 <= len(p) <= 7:
         return False
-    ts, vs = [int(t) for t, _ in p], [int(v) for _, v in p]
+    ts, vs = [t for t, _ in p], [v for _, v in p]
     return (
         all(25 <= t <= 90 for t in ts)
         and all(b - a >= 2 for a, b in zip(ts, ts[1:]))
@@ -142,9 +147,17 @@ def max_fan():
     return False
 
 
+def invalidate_stamp():
+    try:
+        os.unlink(STAMP)
+    except FileNotFoundError:
+        pass
+
+
 def go_stock(fallback):
     rec = {"stock": True}
     try:
+        invalidate_stamp()
         if os.path.exists(DROPIN):
             os.remove(DROPIN)
         sc("daemon-reload", check=True)
@@ -160,7 +173,8 @@ def go_stock(fallback):
 
 
 if not os.environ.get("FRAME_FAN_LOCKED"):
-    lock = open(LOCK, "a")
+    lock = os.fdopen(os.open(LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600), "a")
+    os.fchmod(lock.fileno(), 0o600)
     for _ in range(600):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -177,38 +191,59 @@ if "--stock" in sys.argv:
 if not os.path.isdir(os.path.dirname(CONFIG)):
     raise SystemExit(0)
 
+def parse():
+    try:
+        req = read_request()
+        if req.get("stock") is True:
+            go_stock(False)
+        if "points" in req:
+            pts = [[int(t), int(v)] for t, v in req["points"]]
+            if not valid_points(pts):
+                raise ValueError
+            req = {"points": pts}
+            f, c = pts[0][1], pts[-1][1]
+            param = "curve: " + json.dumps(pts)
+        else:
+            f, c, t0, t1 = (int(req[k]) for k in ("floor", "ceil", "t0", "t1"))
+            s = int(req.get("s", 0))
+            if not (30 <= f <= c <= 98 and 25 <= t0 and t0 + 5 <= t1 <= 90 and -100 <= s <= 100):
+                raise ValueError
+            req = {"floor": f, "ceil": c, "t0": t0, "t1": t1, "s": s}
+            param = "ramp: " + json.dumps([f, c, t0, t1, s / 100])
+    except Exception:
+        raise SystemExit(1)
+    return req, param, f, c
+
+
+req, param, f, c = parse()
+request_key = json.dumps(req, sort_keys=True)
 try:
-    req = read_request()
-    if req.get("stock") is True:
-        go_stock(False)
-    if "points" in req:
-        pts = [[int(t), int(v)] for t, v in req["points"]]
-        if not valid_points(pts):
-            raise ValueError
-        req = {"points": pts}
-        f, c = pts[0][1], pts[-1][1]
-        param = "curve: " + json.dumps(pts)
-    else:
-        f, c, t0, t1 = (int(req[k]) for k in ("floor", "ceil", "t0", "t1"))
-        s = int(req.get("s", 0))
-        if not (30 <= f <= c <= 98 and 25 <= t0 and t0 + 5 <= t1 <= 90 and -100 <= s <= 100):
-            raise ValueError
-        req = {"floor": f, "ceil": c, "t0": t0, "t1": t1, "s": s}
-        param = "ramp: " + json.dumps([f, c, t0, t1, s / 100])
-except Exception:
-    raise SystemExit(1)
+    with open(STAMP) as stamp_file:
+        stamp_t, stamp_key = stamp_file.read().split(" ", 1)
+    age = time.time() - float(stamp_t)
+except (OSError, ValueError):
+    age, stamp_key = 1e9, ""
+if request_key == stamp_key and 0 <= age < 5:
+    print("skipped: identical request applied %.1f s ago" % age, file=sys.stderr)
+    raise SystemExit(0)
+if request_key != stamp_key and 0 <= age < 2:
+    time.sleep(2 - age)
+    req, param, f, c = parse()
+    request_key = json.dumps(req, sort_keys=True)
 
 try:
+    invalidate_stamp()
     ctl = patched()
-    text = open(STOCK).read()
+    with open(STOCK) as stock_file:
+        text = stock_file.read()
     subs = {
         "fan_min_speed": f,
         "fan_charging_min_speed": min(f + 5, c),
         "fan_max_speed": 98,
         "fan_hysteresis": 6,
     }
-    for key, v in subs.items():
-        text = sub(r"^%s: .*$" % key, "%s: %s" % (key, v), text)
+    for setting_name, v in subs.items():
+        text = sub(r"^%s: .*$" % setting_name, "%s: %s" % (setting_name, v), text)
     text = sub(r"^( +)T_threshold: [0-9.]+$", lambda m: m[0] + "\n" + m[1] + param, text, len(re.findall(r"^ +type: ", text, re.M)))
     write(CONTROL, ctl, 0o755)
     write(CONFIG, text)
@@ -219,3 +254,4 @@ try:
 except Exception:
     go_stock(True)
 write(APPLIED, json.dumps(req))
+write(STAMP, "%f %s" % (time.time(), request_key))

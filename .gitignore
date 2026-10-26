@@ -1,1 +1,8 @@
 __pycache__/
+dist/
+*.key
+*.pem
+id_*
+!*.pub
+release-signing/*
+!release-signing/allowed_signers

@@ -1,46 +1,24 @@
 #!/bin/bash
-[ -n "$FRAME_FAN_LOCKED" ] || FRAME_FAN_LOCKED=1 exec flock -w 60 /run/frame-fan.lock /bin/bash "$0" "$@"
+[ "$#" = 2 ] && [ "$1" = --signer-fp ] && [[ "$2" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || { echo "usage: install-root.sh --signer-fp SHA256:<fingerprint>" >&2; exit 2; }
+[ -n "$FRAME_FAN_LOCKED" ] || { umask 077; chmod 600 /run/frame-fan.lock 2>/dev/null; FRAME_FAN_LOCKED=1 exec flock -w 60 /run/frame-fan.lock /bin/bash "$0" "$@"; }
 set -e
-D=/etc/systemd/system/deckard-fan-control.service.d
+umask 022
+S=$(cd "$(dirname "$0")" && pwd)
+L=$(cat "$S/release-signing/allowed_signers")
+re='^framey-release namespaces="framey-fan-release" (ssh-ed25519 [A-Za-z0-9+/]+=*)$'
+[[ $L =~ $re ]] || { echo "release-signing/allowed_signers is not the expected single line" >&2; exit 1; }
+[ "$(echo "${BASH_REMATCH[1]}" | ssh-keygen -lf - | cut -d' ' -f2)" = "$2" ] || { echo "signing key fingerprint does not match $2" >&2; exit 1; }
+V=$(/usr/bin/python3 -I -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$S/plugin.json")
 ok=
-trap '[ -n "$ok" ] || /bin/bash /home/steamos/frame-fan/uninstall-root.sh' EXIT
-systemctl stop frame-fan.path 2>/dev/null || true
-rm -f $D/frame-fan.conf
-systemctl daemon-reload
+trap '[ -n "$ok" ] || /bin/bash "$S/uninstall-root.sh"' EXIT
+trap 'exit 1' INT TERM HUP
+. "$S/root-lib.sh"
 mkdir -p /etc/frame-fan
-rm -rf /etc/frame-fan/fan
-cp -r /usr/share/deckard-fan-control /etc/frame-fan/fan
-install -m 755 /home/steamos/frame-fan/fan-apply.py /etc/frame-fan/fan-apply.py
-chown -R root:root /etc/frame-fan
-chmod -R go-w /etc/frame-fan
-cat > /etc/systemd/system/frame-fan.path <<'EOT'
-[Path]
-PathChanged=/home/steamos/.config/frame-fan/fan.json
-[Install]
-WantedBy=multi-user.target
-EOT
-cat > /etc/systemd/system/frame-fan.service <<'EOT'
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/python3 /etc/frame-fan/fan-apply.py
-EOT
-cat > /etc/systemd/system/frame-fan-stock.service <<'EOT'
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/python3 /etc/frame-fan/fan-apply.py --stock
-EOT
-systemctl daemon-reload
-systemctl reset-failed frame-fan-stock.service 2>/dev/null || true
-if [ -f /home/steamos/.config/frame-fan/fan.json ]; then
-  /usr/bin/python3 /etc/frame-fan/fan-apply.py || /usr/bin/python3 /etc/frame-fan/fan-apply.py --stock
-else
-  systemctl reset-failed deckard-fan-control 2>/dev/null || true
-  systemctl restart deckard-fan-control
-  echo '{"stock": true}' > /etc/frame-fan/fan/applied.json
-fi
-sleep 15
-systemctl is-active deckard-fan-control
-systemctl enable --now frame-fan.path
+echo "$L" > /etc/frame-fan/.allowed_signers.new
+sync /etc/frame-fan/.allowed_signers.new
+mv -f /etc/frame-fan/.allowed_signers.new /etc/frame-fan/allowed_signers
+ff_install "$S"
+ff_marker "$V"
 ok=1
 echo "rpm=$(cat $(dirname $(grep -l '^slg4ax46073v$' /sys/class/hwmon/hwmon*/name))/fan1_input)"
 cat /etc/frame-fan/fan/applied.json
