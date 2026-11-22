@@ -216,6 +216,7 @@ try:
     write(DROPIN, UNIT)
     sc("daemon-reload", check=True)
     restart()
-except Exception:
+except Exception as e:
+    print(f"apply failed: {e}", file=sys.stderr, flush=True)
     go_stock(True)
 write(APPLIED, json.dumps(req))
